@@ -1,4 +1,4 @@
-import { Bot, Context } from "grammy";
+import { Bot, Context, session, SessionFlavor } from "grammy";
 import dotenv from "dotenv";
 import { io } from "socket.io-client";
 import { MessageModel } from "./util/models";
@@ -6,14 +6,63 @@ import { getRandomInternetColor } from "./util/helpers";
 import { FileFlavor, hydrateFiles } from "@grammyjs/files";
 import { v2 as cloudinary } from "cloudinary";
 
-type MyContext = FileFlavor<Context>;
+interface User {
+  hexColor: string;
+}
+
+interface SessionData {
+  users: Map<number, User>;
+}
+
+type MyContext = FileFlavor<Context> & Context & SessionFlavor<SessionData>;
 
 dotenv.config();
 
 const ENDPOINT = process.env.SOCKET_ENDPOINT as string;
 console.log("Socket Endpoint: ", ENDPOINT);
 const bot = new Bot<MyContext>(process.env.BOT_TOKEN as string);
+
 bot.api.config.use(hydrateFiles(bot.token));
+/* bot.use(
+  session({
+    initial: () => ({
+      hexColor: getRandomInternetColor(),
+    }),
+  })
+);
+ */
+/* bot.use((ctx: MyContext, next) => {
+  if (!ctx.session.users) {
+    ctx.session.users = new Map<number, User>();
+  }
+  return next();
+}); */
+
+bot.use(
+  session({
+    initial: () => ({
+      users: new Map<number, User>()
+    }),
+  })
+);
+
+bot.use((ctx: MyContext, next) => {
+  if (!ctx.session.users) {
+    ctx.session.users = new Map<number, User>();
+  }
+  return next();
+});
+
+function checkAndAdd(id: number, ctx: MyContext) {
+  if (!ctx.session.users.has(id)) {
+    const generatedHexColor = getRandomInternetColor();
+    const user: User = {
+      hexColor: generatedHexColor,
+    };
+
+    ctx.session.users.set(id, user);
+  }
+}
 
 cloudinary.config({
   cloud_name: process.env.CLOUD_NAME as string,
@@ -51,6 +100,7 @@ bot.on(":text", (ctx) => {
   console.log("on message is triggered!");
   if (message) {
     const { text, chat } = message;
+    checkAndAdd(message.from.id, ctx);
 
     const chatMessage: MessageModel = {
       id: chat.id,
@@ -66,7 +116,7 @@ bot.on(":text", (ctx) => {
         username: message.from.username as string,
         isBot: message.from.is_bot,
         currentBadge: "normal",
-        color: getRandomInternetColor(),
+        color: ctx.session.users.get(message.from.id)?.hexColor ?? "#fff"
       },
     };
 
@@ -74,12 +124,14 @@ bot.on(":text", (ctx) => {
   }
 });
 
-bot.on(":animation", async (ctx: Context) => {
+bot.on(":animation", async (ctx: MyContext) => {
   const message = ctx.message;
 
   if (message) {
     const { text, chat } = message;
     const file = await ctx.getFile();
+
+    checkAndAdd(message.from.id, ctx);
 
     const remoteURL = `https://api.telegram.org/file/bot${bot.token}/${file.file_path}`;
 
@@ -107,7 +159,7 @@ bot.on(":animation", async (ctx: Context) => {
         username: message.from.username as string,
         isBot: message.from.is_bot,
         currentBadge: "normal",
-        color: getRandomInternetColor(),
+        color:  ctx.session.users.get(message.from.id)?.hexColor ?? "#fff"
       },
     };
 
@@ -115,12 +167,14 @@ bot.on(":animation", async (ctx: Context) => {
   }
 });
 
-bot.on(":sticker", async (ctx: Context) => {
+bot.on(":sticker", async (ctx: MyContext) => {
   const message = ctx.message;
 
   if (message) {
     const { text, chat } = message;
     const file = await ctx.getFile();
+
+    checkAndAdd(message.from.id, ctx);
 
     const remoteURL = `https://api.telegram.org/file/bot${bot.token}/${file.file_path}`;
 
@@ -130,11 +184,11 @@ bot.on(":sticker", async (ctx: Context) => {
       public_id: file.file_path,
     });
 
-    const animationMessage: MessageModel = {
+    const stickerMessage: MessageModel = {
       id: chat.id,
       content: {
         chatId: chat.id,
-        type: "animation",
+        type: "sticker",
         date: Date.now(),
         fileId: message.document?.file_id ?? "not found",
         mime_type: message.document?.mime_type ?? "not found",
@@ -146,12 +200,54 @@ bot.on(":sticker", async (ctx: Context) => {
         username: message.from.username as string,
         isBot: message.from.is_bot,
         currentBadge: "normal",
-        color: getRandomInternetColor(),
+        color:  ctx.session.users.get(message.from.id)?.hexColor ?? "#fff"
       },
     };
 
-    socket.emit("message", animationMessage);
+    socket.emit("message", stickerMessage);
     //ctx.reply(`Sticker detected... result: ${uploadResult.url}`);
+  }
+});
+
+bot.on(":photo", async (ctx: MyContext) => {
+  const message = ctx.message;
+
+  if (message) {
+    const { chat } = message;
+    const file = await ctx.getFile();
+
+    checkAndAdd(message.from.id, ctx);
+
+    const remoteURL = `https://api.telegram.org/file/bot${bot.token}/${file.file_path}`;
+
+    const uploadResult = await cloudinary.uploader.upload(remoteURL, {
+      folder: "super-stream",
+      resource_type: "auto",
+      public_id: file.file_path,
+    });
+
+    const photoMessage: MessageModel = {
+      id: chat.id,
+      content: {
+        chatId: chat.id,
+        type: "photo",
+        date: Date.now(),
+        fileId: message.document?.file_id ?? "not found",
+        mime_type: message.document?.mime_type ?? "not found",
+        file_name: uploadResult.url ?? "not found",
+      },
+      author: {
+        id: message.from.id,
+        firstName: message.from.first_name,
+        username: message.from.username as string,
+        isBot: message.from.is_bot,
+        currentBadge: "normal",
+        color: ctx.session.users.get(message.from.id)?.hexColor ?? "#fff",
+      },
+    };
+
+    socket.emit("message", photoMessage);
+    //ctx.reply(`Photos detected... result: ${uploadResult.url}`);
   }
 });
 
