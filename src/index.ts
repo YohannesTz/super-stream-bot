@@ -89,13 +89,13 @@ const socket = connect();
 console.log("is Connected: ", socket.connected);
 
 bot.hears(/grug/i, async (ctx) => {
-  console.log(JSON.stringify(ctx, null, 2));
+  //console.log(JSON.stringify(ctx, null, 2));
   await ctx.reply("grug is out! hunting... :(", {
     reply_to_message_id: ctx.msg.message_id,
   });
 });
 
-bot.on(":text", (ctx) => {
+bot.on(":text", async (ctx) => {
   const message = ctx.message;
   console.log("on message is triggered!");
   if (message) {
@@ -140,8 +140,6 @@ bot.on(":animation", async (ctx: MyContext) => {
       resource_type: "auto",
       public_id: file.file_path,
     });
-
-    console.log(uploadResult);
 
     const animationMessage: MessageModel = {
       id: chat.id,
@@ -247,7 +245,6 @@ bot.on(":photo", async (ctx: MyContext) => {
     };
 
     socket.emit("message", photoMessage);
-    //ctx.reply(`Photos detected... result: ${uploadResult.url}`);
   }
 });
 
