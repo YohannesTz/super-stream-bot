@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@grammyjs/files": "^1.0.4",
+    "@grammyjs/menu": "^1.2.1",
     "@types/dotenv": "^8.2.0",
     "@types/express": "^4.17.17",
     "@types/socket.io": "^3.0.2",
