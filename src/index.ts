@@ -6,7 +6,6 @@ import {
   session,
   SessionFlavor,
 } from "grammy";
-import { Menu } from "@grammyjs/menu";
 import dotenv from "dotenv";
 import { io } from "socket.io-client";
 import { MessageModel, ReactionContent } from "./util/models";
@@ -14,6 +13,7 @@ import { getRandomInternetColor } from "./util/helpers";
 import { FileFlavor, hydrateFiles } from "@grammyjs/files";
 import { v2 as cloudinary } from "cloudinary";
 import { reactions } from "./util/resources";
+import Fuse from "fuse.js";
 
 interface User {
   hexColor: string;
@@ -67,14 +67,15 @@ const connect = () => {
 const socket = connect();
 console.log("is Connected: ", socket.connected);
 
+const fuseOptions: Fuse.IFuseOptions<any> = {
+  keys: ["title", "keywords", "slug"],
+};
+
+const fuse = new Fuse(reactions, fuseOptions);
+
 function searchVideosByTitleAndSlug(searchTerm: string): ReactionContent[] {
-  const regex = new RegExp(searchTerm, "i");
-  return reactions.filter(
-    (content) =>
-      regex.test(content.keywords) ||
-      regex.test(content.title) ||
-      regex.test(content.slug)
-  );
+  const searchResults = fuse.search(searchTerm);
+  return searchResults.map((result) => result.item);
 }
 
 bot.on("inline_query", async (ctx) => {
@@ -84,17 +85,47 @@ bot.on("inline_query", async (ctx) => {
   if (searchTerm) {
     const results = searchVideosByTitleAndSlug(searchTerm);
     await ctx.answerInlineQuery(
-      results.map((result, index) => ({
+      results.map((result) => ({
         type: "article",
-        id: index.toString(),
+        id: result.slug,
         title: result.title,
         input_message_content: {
           message_text: `${firstName} redeemed ${result.title}`,
         },
-        url: "https://res.cloudinary.com/dgiyepcoy/video/upload/v1695337510/super-stream/videos/" + result.slug,
-        hide_url: true,
       }))
     );
+  }
+});
+
+bot.on("chosen_inline_result", async (ctx) => {
+  console.log("inline result trigger!");
+  console.log(ctx.update.chosen_inline_result?.result_id);
+  const message = ctx.message;
+  console.log("message: ", ctx.update.chosen_inline_result.from);
+
+  if (ctx) {
+    //those data are not accurate. TODO: fix this later
+    const message = ctx.update.chosen_inline_result.from;
+    const inlineSlug = ctx.update.chosen_inline_result?.result_id;
+    const reactionMessage: MessageModel = {
+      id: message.id,
+      content: {
+        title: "None",
+        keywords: "None",
+        slug: inlineSlug,
+        by: "None",
+      },
+      author: {
+        id: message.id,
+        firstName: message.first_name,
+        username: message.username as string,
+        isBot: message.is_bot,
+        currentBadge: "normal",
+        color: "#05ba29", //can't fetch this from session so you will have to assign it. make it dyamic later!
+      },
+    };
+    console.log("emiited reaction...");
+    socket.emit("reaction", reactionMessage);
   }
 });
 
@@ -122,8 +153,7 @@ bot.hears(/grug/i, async (ctx) => {
 bot.on(":text", async (ctx) => {
   const message = ctx.message;
   console.log("on message is triggered!");
-  console.log(ctx, null, 2);
-  
+
   if (message) {
     const { text, chat } = message;
     checkAndAdd(message.from.id, ctx);
@@ -154,7 +184,7 @@ bot.on(":animation", async (ctx: MyContext) => {
   const message = ctx.message;
 
   if (message) {
-    const { text, chat } = message;
+    const { chat } = message;
     const file = await ctx.getFile();
 
     checkAndAdd(message.from.id, ctx);
@@ -195,7 +225,7 @@ bot.on(":sticker", async (ctx: MyContext) => {
   const message = ctx.message;
 
   if (message) {
-    const { text, chat } = message;
+    const { chat } = message;
     const file = await ctx.getFile();
 
     checkAndAdd(message.from.id, ctx);

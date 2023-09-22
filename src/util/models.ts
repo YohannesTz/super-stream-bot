@@ -1,6 +1,6 @@
 export interface MessageModel {
   id: number;
-  content: TextContent | MediaContent;
+  content: TextContent | MediaContent | ReactionContent;
   author: Author;
 }
 
