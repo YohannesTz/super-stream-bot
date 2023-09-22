@@ -5,7 +5,7 @@
   "license": "MIT",
   "scripts": {
     "start": "yarn run build && node build/index.js",
-    "dev": "yarn nodemon ./src/index.ts",
+    "dev": "yarn nodemon ./api/index.ts",
     "build": "rimraf ./build && tsc"
   },
   "devDependencies": {

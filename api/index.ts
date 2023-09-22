@@ -1,10 +1,9 @@
 import {
   Bot,
   Context,
-  InlineKeyboard,
-  InlineQueryResultBuilder,
   session,
   SessionFlavor,
+  webhookCallback,
 } from "grammy";
 import dotenv from "dotenv";
 import { io } from "socket.io-client";
@@ -302,6 +301,8 @@ bot.on(":photo", async (ctx: MyContext) => {
     socket.emit("message", photoMessage);
   }
 });
+
+export default webhookCallback(bot, "http");
 
 bot.start();
 bot.catch((error) => {
